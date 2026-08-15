@@ -136,4 +136,12 @@ of the body are sent to the model. Attachment payloads never are.
 
 ```console
 $ uv run pytest
+$ uv run ruff check .
 ```
+
+Commits follow [Conventional Commits](https://www.conventionalcommits.org/). On every push to
+`main`, CI runs lint and tests; if they pass, [Commitizen](https://commitizen-tools.github.io/commitizen/)
+checks whether the commits since the last tag warrant a release, and if so bumps the version in
+`pyproject.toml`, updates `CHANGELOG.md`, tags the commit, and creates a GitHub release. Publishing
+that release to PyPI happens in a separate workflow, via PyPI's trusted publishing (OIDC), so no
+API token is stored in this repository.
