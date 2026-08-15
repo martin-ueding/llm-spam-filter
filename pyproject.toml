@@ -1,5 +1,5 @@
 [project]
-name = "llm-spam-organizer"
+name = "llm-spam-filter"
 version = "0.2.2"
 description = "Move spam into the spam folder over IMAP using a local LLM served by Ollama"
 readme = "README.md"
@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.scripts]
-llm-spam-organizer = "llm_spam_organizer:main"
+llm-spam-filter = "llm_spam_filter:main"
 
 [project.optional-dependencies]
 eval = [
@@ -45,7 +45,6 @@ addopts = "-q"
 
 [tool.commitizen]
 name = "cz_conventional_commits"
-version = "0.1.0"
 version_provider = "pep621"
 update_changelog_on_bump = true
 major_version_zero = true

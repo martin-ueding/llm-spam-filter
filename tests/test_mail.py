@@ -2,7 +2,7 @@ from email.message import EmailMessage
 
 from imap_tools.message import MailMessage
 
-from llm_spam_organizer.mail import Mail
+from llm_spam_filter.mail import Mail
 
 
 def build(*, text: str | None = None, html: str | None = None, attachment: bool = False) -> Mail:

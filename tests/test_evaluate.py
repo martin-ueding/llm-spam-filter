@@ -4,8 +4,8 @@ import random
 import pytest
 from imap_tools import FolderInfo, MailboxFolderSelectError
 
-from llm_spam_organizer.classify import ClassificationError, Verdict
-from llm_spam_organizer.evaluate import (
+from llm_spam_filter.classify import ClassificationError, Verdict
+from llm_spam_filter.evaluate import (
     Sample,
     _message_hash,
     _sample_uids,
@@ -14,7 +14,7 @@ from llm_spam_organizer.evaluate import (
     format_table,
     load_dataset,
 )
-from llm_spam_organizer.mail import Mail
+from llm_spam_filter.mail import Mail
 
 
 class FakeMailbox:

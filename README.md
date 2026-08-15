@@ -1,4 +1,4 @@
-# LLM Spam Organizer
+# LLM Spam Filter
 
 My mail provider's spam filter sucks and I rely on the spam filter in Thunderbird. That isn't ideal, but better than nothing. Thunderbird's filter is okay, but a small LLM should be even better.
 
@@ -24,10 +24,10 @@ $ ollama pull qwen3.5:2b-q4_K_M
 ## Configuration
 
 ```console
-$ llm-spam-organizer init-config
+$ llm-spam-filter init-config
 ```
 
-writes a commented example to `~/.config/llm-spam-organizer/config.toml` with mode
+writes a commented example to `~/.config/llm-spam-filter/config.toml` with mode
 `0600`. The password can be given literally as `password` or, better, as a
 `password_command` whose first output line is used, so that it can come from `pass` or
 `secret-tool`.
@@ -35,30 +35,30 @@ writes a commented example to `~/.config/llm-spam-organizer/config.toml` with mo
 ## Moving spam
 
 ```console
-$ llm-spam-organizer run --dry-run     # classify and print, move nothing
-$ llm-spam-organizer run               # move everything at or above the threshold
-$ llm-spam-organizer run --watch       # keep running, wait for new mail via IMAP IDLE
+$ llm-spam-filter run --dry-run     # classify and print, move nothing
+$ llm-spam-filter run               # move everything at or above the threshold
+$ llm-spam-filter run --watch       # keep running, wait for new mail via IMAP IDLE
 ```
 
 Only messages with a UID above the highest one already seen are classified. That
-watermark lives in `~/.local/state/llm-spam-organizer/state.json`, keyed by account,
+watermark lives in `~/.local/state/llm-spam-filter/state.json`, keyed by account,
 folder, and `UIDVALIDITY`, and it only advances on a real run, not on a dry run.
 `--reprocess` starts over, `--limit N` restricts a run to the newest N messages.
 
 For a periodic run without `--watch`, a systemd user timer calling
-`llm-spam-organizer run` every few minutes works well.
+`llm-spam-filter run` every few minutes works well.
 
 Single files can be classified without touching the server, which is the fastest way to
 try a prompt:
 
 ```console
-$ llm-spam-organizer classify --prompt rubric --show-input message.eml
+$ llm-spam-filter classify --prompt rubric --show-input message.eml
 ```
 
 ## Comparing models and prompts
 
 ```console
-$ llm-spam-organizer evaluate
+$ llm-spam-filter evaluate
 ```
 
 fetches the spam folder and a random sample of `evaluation.archive_folders` (spam is the

@@ -388,8 +388,8 @@ wheels = [
 ]
 
 [[package]]
-name = "llm-spam-organizer"
-version = "0.2.1"
+name = "llm-spam-filter"
+version = "0.2.2"
 source = { editable = "." }
 dependencies = [
     { name = "html2text" },

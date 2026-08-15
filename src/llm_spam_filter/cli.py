@@ -20,7 +20,7 @@ from .prompts import PROMPTS
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="llm-spam-organizer",
+        prog="llm-spam-filter",
         description="Move spam into the spam folder using a local LLM served by Ollama.",
     )
     parser.add_argument(

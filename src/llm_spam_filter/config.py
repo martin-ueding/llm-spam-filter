@@ -78,7 +78,7 @@ def default_state_path() -> Path:
 
 def _xdg_dir(variable: str, fallback: str) -> Path:
     base = os.environ.get(variable) or Path.home() / fallback
-    return Path(base) / "llm-spam-organizer"
+    return Path(base) / "llm-spam-filter"
 
 
 def load_config(path: Path) -> Config:
@@ -86,7 +86,7 @@ def load_config(path: Path) -> Config:
         raw = tomllib.loads(path.read_text())
     except FileNotFoundError:
         raise ConfigError(
-            f"No configuration at {path}, create one with `llm-spam-organizer init-config`"
+            f"No configuration at {path}, create one with `llm-spam-filter init-config`"
         ) from None
     except tomllib.TOMLDecodeError as error:
         raise ConfigError(f"{path} is not valid TOML: {error}") from None

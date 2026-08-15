@@ -1,9 +1,9 @@
 import pytest
 
-from llm_spam_organizer.classify import ClassificationError, Verdict
-from llm_spam_organizer.config import parse_config
-from llm_spam_organizer.mail import Mail
-from llm_spam_organizer.organize import State, _process
+from llm_spam_filter.classify import ClassificationError, Verdict
+from llm_spam_filter.config import parse_config
+from llm_spam_filter.mail import Mail
+from llm_spam_filter.organize import State, _process
 
 RAW = {"imap": {"host": "h", "username": "u", "password": "p"}, "ollama": {"threshold": 0.7}}
 
@@ -50,7 +50,7 @@ def setup(monkeypatch, tmp_path):
         mails = [mail(uid) for uid in uids]
         mailbox = FakeMailbox(mails)
         monkeypatch.setattr(
-            "llm_spam_organizer.organize.fetch_mails",
+            "llm_spam_filter.organize.fetch_mails",
             lambda box, folder, wanted: [m for m in mails if m.uid in wanted],
         )
         state = State(tmp_path / "state.json")

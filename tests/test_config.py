@@ -1,7 +1,7 @@
 import pytest
 
-from llm_spam_organizer.config import ConfigError, parse_config, required_num_ctx
-from llm_spam_organizer.prompts import PROMPTS
+from llm_spam_filter.config import ConfigError, parse_config, required_num_ctx
+from llm_spam_filter.prompts import PROMPTS
 
 MINIMAL = {"imap": {"host": "imap.example.com", "username": "me", "password": "s3cret"}}
 

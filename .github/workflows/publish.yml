@@ -17,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/llm-spam-organizer/
+      url: https://pypi.org/project/llm-spam-filter/
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,7 +29,7 @@ jobs:
           tag="$(git describe --tags --abbrev=0)"
           version="${tag#v}"
           git checkout "$tag"
-          status="$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/llm-spam-organizer/${version}/json")"
+          status="$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/llm-spam-filter/${version}/json")"
           if [ "$status" = "200" ]; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
           else
