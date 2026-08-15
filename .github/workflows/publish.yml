@@ -1,8 +1,11 @@
 name: Publish
 
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -10,6 +13,7 @@ permissions:
 
 jobs:
   publish:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment:
       name: pypi
@@ -17,12 +21,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.release.tag_name }}
+          fetch-depth: 0
+
+      - name: Resolve latest tag and check PyPI
+        id: check
+        run: |
+          tag="$(git describe --tags --abbrev=0)"
+          version="${tag#v}"
+          git checkout "$tag"
+          status="$(curl -s -o /dev/null -w "%{http_code}" "https://pypi.org/pypi/llm-spam-organizer/${version}/json")"
+          if [ "$status" = "200" ]; then
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "publish=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - uses: astral-sh/setup-uv@v5
+        if: steps.check.outputs.publish == 'true'
         with:
           version: "0.11.32"
 
       - run: uv build
+        if: steps.check.outputs.publish == 'true'
 
       - uses: pypa/gh-action-pypi-publish@release/v1
+        if: steps.check.outputs.publish == 'true'
