@@ -26,8 +26,6 @@ jobs:
           fetch-depth: 0
 
       - uses: astral-sh/setup-uv@v5
-        with:
-          python-version-file: ".python-version"
 
       - run: uv sync --dev
 
