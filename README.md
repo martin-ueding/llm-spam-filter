@@ -88,14 +88,46 @@ classification error here.
 
 ## Notes on running this on a laptop
 
-- Thinking is turned off (`ollama.think = false`). On CPU a reasoning trace costs minutes
-  per message and did not produce better verdicts than the direct answer.
-- `ollama.concurrency` defaults to 2. More parallel requests grow the KV cache and, on a
-  16 GB machine, push the model out of memory rather than making anything faster.
-- The evaluation unloads each model before it loads the next one, so only one set of
-  weights is resident at a time.
-- Only the headers, a short attachment list, and at most `ollama.max_body_chars`
-  characters of the body are sent to the model. Attachment payloads never are.
+Thinking is turned off (`ollama.think = false`). On CPU a reasoning trace costs minutes
+per message and did not produce a better verdict than the direct answer: `qwen3.5:2b-q4_K_M`
+took 5 min 24 s on one message with thinking and 10.6 s without, for the same conclusion.
+
+Only one model is resident at a time. After the last prompt of a model, the evaluation
+sends `keep_alive = 0`, which makes Ollama drop the weights immediately instead of holding
+them for the keep-alive window. Without that, `OLLAMA_MAX_LOADED_MODELS` (3 by default)
+would let several models sit in memory at once. Watching `ollama ps` through a two model
+sweep shows `qwen3.5:0.8b` (1.1 GB), then nothing, then `qwen3.5:2b-q4_K_M` (1.6 GB).
+
+`ollama.num_ctx` has to fit the whole prompt, and the interesting number is not how many
+characters a mail has but how badly they tokenize. Measured with `qwen3.5:0.8b`:
+
+| content | chars per token |
+| --- | --- |
+| English prose | 5.3 |
+| German prose | 4.8 |
+| base64-like payload | 1.9 |
+
+Spam is full of the last kind, so the configuration sizes the context for 1.9. The default
+`num_ctx = 8192` covers the default `max_body_chars = 4000` about twice over. Raising
+`max_body_chars` without raising `num_ctx` is refused at startup rather than silently
+truncating: Ollama drops tokens from the *front* of an overlong prompt, which is exactly
+where the system prompt sits. At runtime a message that uses more than 90 % of the context
+is logged as a warning.
+
+Context is cheap on these model sizes, so there is no reason to be stingy. For
+`qwen3.5:2b-q4_K_M` the resident size grows from 1.6 GB at `num_ctx = 4096` to 1.7 GB at
+8192, 1.9 GB at 16384, and 2.1 GB at 32768. Setting `num_ctx = 0` sends no context option
+at all and uses whatever the model's own Modelfile declares, which is the point of the
+`-32k` tags.
+
+`ollama.concurrency` defaults to 2, which is where the speedup stops. Three messages
+through `qwen3.5:0.8b` took 10.8 s at concurrency 1, 7.9 s at 2, and 8.2 s at 3; the CPU
+is saturated after that. The resident size did not change under four concurrent requests,
+so the setting costs throughput, not memory. Larger models are more compute bound and gain
+less: `qwen3.5:2b-q4_K_M` stays near 10 s per message either way.
+
+Only the headers, a short attachment list, and at most `ollama.max_body_chars` characters
+of the body are sent to the model. Attachment payloads never are.
 
 ## Development
 
