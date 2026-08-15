@@ -1,3 +1,15 @@
+## v0.3.0 (2026-08-15)
+
+### BREAKING CHANGE
+
+- the CLI command and PyPI/import package name change
+from llm-spam-organizer/llm_spam_organizer to
+llm-spam-filter/llm_spam_filter.
+
+### Feat
+
+- rename package and CLI command to llm-spam-filter
+
 ## v0.2.2 (2026-08-15)
 
 ### Fix
