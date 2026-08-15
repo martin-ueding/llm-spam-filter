@@ -1,3 +1,9 @@
+## v0.2.1 (2026-08-15)
+
+### Fix
+
+- push lightweight release tags and pin uv version in CI
+
 ## v0.2.0 (2026-08-15)
 
 ### Feat

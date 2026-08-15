@@ -1,6 +1,6 @@
 [project]
 name = "llm-spam-organizer"
-version = "0.2.0"
+version = "0.2.1"
 description = "Move spam into the spam folder over IMAP using a local LLM served by Ollama"
 readme = "README.md"
 authors = [
