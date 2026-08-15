@@ -64,6 +64,7 @@ class SpamClassifier:
         except (ollama.ResponseError, ConnectionError, TimeoutError) as error:
             raise ClassificationError(f"{self.model}: {error}") from None
 
+        self._check_context(response, mail)
         content = response.message.content or ""
         try:
             parsed = _Response.model_validate_json(content)
@@ -78,6 +79,19 @@ class SpamClassifier:
             prompt=self.prompt_name,
         )
 
+    def _check_context(self, response: ollama.ChatResponse, mail: Mail) -> None:
+        """An overlong prompt is shifted out at the front, taking the system prompt with it."""
+        used = response.prompt_eval_count or 0
+        limit = self.config.num_ctx
+        if limit and used > 0.9 * limit:
+            logger.warning(
+                "%s/%s used %d of %d context tokens; lower ollama.max_body_chars or raise num_ctx",
+                mail.folder,
+                mail.uid,
+                used,
+                limit,
+            )
+
     def _chat(self, messages: list[dict[str, str]]) -> ollama.ChatResponse:
         try:
             return self._request(messages, think=self._think)
@@ -91,11 +105,15 @@ class SpamClassifier:
     def _request(
         self, messages: list[dict[str, str]], *, think: bool | None
     ) -> ollama.ChatResponse:
+        options: dict[str, float | int] = {"temperature": self.config.temperature}
+        if self.config.num_ctx:
+            # Zero means: keep whatever context the model's own Modelfile declares.
+            options["num_ctx"] = self.config.num_ctx
         return self._client.chat(
             model=self.model,
             messages=messages,
             format=_Response.model_json_schema(),
-            options={"temperature": self.config.temperature, "num_ctx": self.config.num_ctx},
+            options=options,
             think=think,
             keep_alive=self.config.keep_alive,
         )

@@ -6,6 +6,7 @@ import os
 import shlex
 import subprocess
 import tomllib
+from collections.abc import Iterable
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
@@ -35,9 +36,11 @@ class OllamaConfig:
     prompt: str = "concise"
     threshold: float = 0.5
     max_body_chars: int = 4000
-    num_ctx: int = 4096
+    # Enough for max_body_chars even when the body is base64-like. 0 leaves the context
+    # to the model's own Modelfile, which is what the "-32k" tags are for.
+    num_ctx: int = 8192
     temperature: float = 0.0
-    # Two parallel requests already saturate a laptop CPU and keep the KV cache small.
+    # Two parallel requests saturate a laptop CPU; a third one measured no faster.
     concurrency: int = 2
     # Reasoning traces cost minutes per message on CPU without improving the verdict.
     think: bool = False
@@ -115,12 +118,35 @@ def parse_config(raw: dict[str, Any], *, source: Path = Path("<memory>")) -> Con
         raise ConfigError("ollama.threshold must be within [0, 1]")
     if config.ollama.concurrency < 1:
         raise ConfigError("ollama.concurrency must be at least 1")
-    unknown_prompts = {config.ollama.prompt, *config.evaluation.prompts} - set(PROMPTS)
+    prompts = {config.ollama.prompt, *config.evaluation.prompts}
+    unknown_prompts = prompts - set(PROMPTS)
     if unknown_prompts:
         raise ConfigError(
             f"Unknown prompt(s) {sorted(unknown_prompts)}, available: {sorted(PROMPTS)}"
         )
+    required = required_num_ctx(config.ollama.max_body_chars, prompts)
+    if 0 < config.ollama.num_ctx < required:
+        raise ConfigError(
+            f"ollama.num_ctx = {config.ollama.num_ctx} is too small for "
+            f"max_body_chars = {config.ollama.max_body_chars}. Ollama would drop the start "
+            f"of the prompt, which is the system prompt. Set num_ctx to at least {required}, "
+            f"or 0 to use the model's own context length."
+        )
     return config
+
+
+# Prose tokenizes at about 5 chars per token, base64-like payloads at 1.9. Spam contains
+# plenty of the latter, so size the context for the bad case.
+CHARS_PER_TOKEN = 1.9
+HEADER_ALLOWANCE_CHARS = 800
+RESPONSE_TOKENS = 256
+
+
+def required_num_ctx(max_body_chars: int, prompts: Iterable[str]) -> int:
+    """Context length that fits the longest prompt, a full body, and the answer."""
+    system_chars = max(len(PROMPTS[name]) for name in prompts)
+    chars = max_body_chars + system_chars + HEADER_ALLOWANCE_CHARS
+    return round(chars / CHARS_PER_TOKEN) + RESPONSE_TOKENS
 
 
 def _section[T](cls: type[T], values: dict[str, Any], name: str) -> T:
@@ -162,8 +188,11 @@ model = "qwen3.5:2b-q4_K_M"
 prompt = "concise"
 # Messages scoring at or above this spam probability are moved.
 threshold = 0.7
+# Body characters sent to the model; the rest is cut off.
 max_body_chars = 4000
-num_ctx = 4096
+# Must fit max_body_chars plus the system prompt. 0 uses the model's own context length,
+# which is what a "-32k" tag is for. On a 2b model, 32768 costs 0.5 GB more than 4096.
+num_ctx = 8192
 # More than a few parallel requests only grows the KV cache on a laptop.
 concurrency = 2
 # A reasoning trace costs minutes per message on CPU and did not improve the verdicts.
