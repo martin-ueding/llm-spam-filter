@@ -4,7 +4,16 @@ import random
 import pytest
 from imap_tools import FolderInfo, MailboxFolderSelectError
 
-from llm_spam_organizer.evaluate import _sample_uids, build_curves, format_table, load_dataset
+from llm_spam_organizer.classify import ClassificationError, Verdict
+from llm_spam_organizer.evaluate import (
+    Sample,
+    _message_hash,
+    _sample_uids,
+    _score_combo,
+    build_curves,
+    format_table,
+    load_dataset,
+)
 from llm_spam_organizer.mail import Mail
 
 
@@ -77,6 +86,79 @@ def test_curves_are_sorted_by_auc_and_count_failures():
 
 def test_single_class_is_skipped():
     assert build_curves({"m|p": rows([(0.1, False), (0.2, False)])}) == []
+
+
+def make_mail(uid: str, subject: str) -> Mail:
+    return Mail(
+        uid=uid, folder="Junk", sender="a@b", recipients="c@d", subject=subject, date="", body="b"
+    )
+
+
+class FakeClassifier:
+    """Records which mails it was asked to classify and returns a scripted verdict for each."""
+
+    def __init__(self, outcomes: dict[str, Verdict | ClassificationError]) -> None:
+        self.outcomes = outcomes
+        self.asked: list[str] = []
+
+    def classify_many(self, mails):
+        mails = list(mails)
+        self.asked += [mail.subject for mail in mails]
+        for mail in mails:
+            yield mail, self.outcomes[mail.subject]
+
+
+def test_message_hash_ignores_uid_and_folder_but_not_content():
+    a = make_mail("1", "hello")
+    b = make_mail("2", "hello")
+    c = make_mail("1", "different")
+    assert _message_hash(a) == _message_hash(b)
+    assert _message_hash(a) != _message_hash(c)
+
+
+def test_score_combo_writes_one_file_per_message_and_skips_them_next_time(tmp_path):
+    samples = [Sample(make_mail("1", "spam mail"), True), Sample(make_mail("2", "ham mail"), False)]
+    outcomes = {
+        "spam mail": Verdict(0.9, "looks spammy", "m", "p"),
+        "ham mail": Verdict(0.1, "looks fine", "m", "p"),
+    }
+    classifier = FakeClassifier(outcomes)
+    rows = _score_combo(classifier, samples, tmp_path, "m|p", rescore=False)
+
+    assert {row["spam_probability"] for row in rows} == {0.9, 0.1}
+    written = sorted(p.name for p in tmp_path.glob("*.json"))
+    assert written == sorted(f"{_message_hash(s.mail)}.json" for s in samples)
+    assert classifier.asked == ["spam mail", "ham mail"]
+
+    # A second run must not ask the classifier again; everything is cached on disk.
+    second_classifier = FakeClassifier(outcomes)
+    second_rows = _score_combo(second_classifier, samples, tmp_path, "m|p", rescore=False)
+    assert second_rows == rows
+    assert second_classifier.asked == []
+
+
+def test_score_combo_does_not_persist_failures_so_they_retry(tmp_path):
+    samples = [Sample(make_mail("1", "flaky"), True)]
+    failing = FakeClassifier({"flaky": ClassificationError("timeout")})
+    rows = _score_combo(failing, samples, tmp_path, "m|p", rescore=False)
+    assert "spam_probability" not in rows[0]
+    assert list(tmp_path.glob("*.json")) == []
+
+    recovered = FakeClassifier({"flaky": Verdict(0.7, "ok now", "m", "p")})
+    rows = _score_combo(recovered, samples, tmp_path, "m|p", rescore=False)
+    assert rows[0]["spam_probability"] == 0.7
+    assert recovered.asked == ["flaky"]
+
+
+def test_score_combo_rescore_ignores_cache(tmp_path):
+    samples = [Sample(make_mail("1", "mail"), True)]
+    first = FakeClassifier({"mail": Verdict(0.2, "first", "m", "p")})
+    _score_combo(first, samples, tmp_path, "m|p", rescore=False)
+
+    second = FakeClassifier({"mail": Verdict(0.8, "second", "m", "p")})
+    rows = _score_combo(second, samples, tmp_path, "m|p", rescore=True)
+    assert second.asked == ["mail"]
+    assert rows[0]["spam_probability"] == 0.8
 
 
 def test_dataset_round_trip(tmp_path):

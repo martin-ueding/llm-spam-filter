@@ -64,8 +64,9 @@ $ llm-spam-organizer evaluate
 fetches the spam folder and a random sample of `evaluation.archive_folders` (spam is the
 positive class, archived mail the negative one), caches the extracted messages in
 `evaluation/dataset.jsonl`, and runs every combination of `evaluation.models` and
-`evaluation.prompts` over them. Results land in `evaluation/scores.json` and
-`evaluation/roc.pdf`, plus a summary on standard output:
+`evaluation.prompts` over them. Each verdict is written to its own file under
+`evaluation/<model>/<prompt>/<hash>.json`, named after a content hash of the message
+(sha256, 12 hex characters), plus `evaluation/roc.pdf` and a summary on standard output:
 
 ```
 model / prompt                                  AUC   thr*   TPR*   FPR*  FPR@95  fail
@@ -78,9 +79,11 @@ qwen3.5:0.8b / concise                        0.943   0.90  0.912  0.078   0.145
 a spam filter the false positive rate matters more than the balanced optimum: `FPR@95`
 says how much ham gets misfiled when 95 % of the spam is caught.
 
-The dataset cache and the scores are both reused, and scores are checkpointed after every
-combination, so an interrupted run resumes where it stopped. `--refresh` fetches the
-dataset again, `--rescore` throws the verdicts away.
+The dataset cache and the per-message verdict files are both reused, so a run interrupted
+by a crash or an out-of-memory kill resumes by skipping whatever files are already on
+disk, down to individual messages rather than whole model/prompt combinations. `--refresh`
+fetches the dataset again (the content hash still matches previously scored messages);
+`--rescore` throws the verdicts away and reclassifies everything.
 
 Since the sample is drawn from folders the filter already sorted, the labels are only as
 good as the sorting that produced them; mail that the old filter got wrong shows up as a

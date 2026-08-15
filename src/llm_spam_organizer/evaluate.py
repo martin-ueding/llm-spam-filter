@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import random
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,7 +19,6 @@ from .mail import Mail, fetch_mails, open_mailbox
 logger = logging.getLogger(__name__)
 
 DATASET_NAME = "dataset.jsonl"
-SCORES_NAME = "scores.json"
 PLOT_NAME = "roc.pdf"
 
 
@@ -123,59 +122,96 @@ def load_dataset(path: Path) -> list[Sample]:
     return samples
 
 
+def _message_hash(mail: Mail) -> str:
+    """Content hash identifying a message across refetches, where uid/folder may shift."""
+    content = {k: v for k, v in mail.to_dict().items() if k not in ("uid", "folder")}
+    digest = hashlib.sha256(json.dumps(content, sort_keys=True).encode())
+    return digest.hexdigest()[:12]
+
+
+def _slug(name: str) -> str:
+    """Make a model or prompt name safe to use as a directory component."""
+    return name.replace("/", "_")
+
+
 def score_dataset(
     config: Config,
     samples: list[Sample],
-    previous: dict[str, list[dict]] | None = None,
-    on_scored: Callable[[dict[str, list[dict]]], None] | None = None,
+    output_dir: Path,
+    *,
+    rescore: bool = False,
 ) -> dict[str, list[dict]]:
     """Run every model and prompt combination over the dataset.
 
-    `on_scored` is called after each combination so that a long run can be interrupted
-    and resumed without losing what has already been classified.
+    Each verdict is written to its own file under `output_dir/<model>/<prompt>/<hash>.json`,
+    keyed by a content hash of the message. A run interrupted by a crash or OOM kill resumes
+    by skipping whatever files are already there instead of rescoring the whole combination.
     """
     evaluation = config.evaluation
     models = evaluation.models or [config.ollama.model]
     prompts = evaluation.prompts or [config.ollama.prompt]
-    scores = dict(previous or {})
+    scores: dict[str, list[dict]] = {}
 
     for model in models:
         classifier = None
         for prompt in prompts:
             key = f"{model}|{prompt}"
-            if key in scores:
-                logger.info("Skipping %s, already scored", key)
-                continue
+            combo_dir = output_dir / _slug(model) / _slug(prompt)
+            combo_dir.mkdir(parents=True, exist_ok=True)
             classifier = SpamClassifier(config.ollama, model=model, prompt=prompt)
             start = time.monotonic()
-            scores[key] = _score_one(classifier, samples, key)
+            scores[key] = _score_combo(classifier, samples, combo_dir, key, rescore=rescore)
             logger.info("%s: %d message(s) in %.0f s", key, len(samples), time.monotonic() - start)
-            if on_scored is not None:
-                on_scored(scores)
         if classifier is not None:
             # Free the weights before the next model is pulled into memory.
             classifier.unload()
     return scores
 
 
-def _score_one(classifier: SpamClassifier, samples: list[Sample], key: str) -> list[dict]:
-    rows: list[dict] = []
-    results = classifier.classify_many(sample.mail for sample in samples)
-    for index, (sample, (mail, result)) in enumerate(zip(samples, results, strict=True), start=1):
-        row = {"uid": mail.uid, "folder": mail.folder, "is_spam": sample.is_spam}
-        if isinstance(result, ClassificationError):
-            logger.warning("%s failed on %s/%s: %s", key, mail.folder, mail.uid, result)
+def _score_combo(
+    classifier: SpamClassifier,
+    samples: list[Sample],
+    combo_dir: Path,
+    key: str,
+    *,
+    rescore: bool,
+) -> list[dict]:
+    hashes = [_message_hash(sample.mail) for sample in samples]
+    rows: dict[str, dict] = {}
+    pending: list[Sample] = []
+    for sample, digest in zip(samples, hashes, strict=True):
+        path = combo_dir / f"{digest}.json"
+        if not rescore and path.exists():
+            rows[digest] = json.loads(path.read_text())
         else:
-            row |= {
-                "subject": mail.subject,
-                "sender": mail.sender,
-                "spam_probability": result.spam_probability,
-                "reason": result.reason,
-            }
-        rows.append(row)
-        if index % 25 == 0:
-            logger.info("%s: %d/%d", key, index, len(samples))
-    return rows
+            pending.append(sample)
+
+    if pending:
+        logger.info(
+            "%s: %d cached, %d to classify", key, len(samples) - len(pending), len(pending)
+        )
+        results = classifier.classify_many(sample.mail for sample in pending)
+        paired = zip(pending, results, strict=True)
+        for index, (sample, (mail, result)) in enumerate(paired, start=1):
+            digest = _message_hash(sample.mail)
+            row = {"uid": mail.uid, "folder": mail.folder, "is_spam": sample.is_spam}
+            if isinstance(result, ClassificationError):
+                # Not written to disk: a transient failure should be retried next run,
+                # not treated as permanently done.
+                logger.warning("%s failed on %s/%s: %s", key, mail.folder, mail.uid, result)
+            else:
+                row |= {
+                    "subject": mail.subject,
+                    "sender": mail.sender,
+                    "spam_probability": result.spam_probability,
+                    "reason": result.reason,
+                }
+                (combo_dir / f"{digest}.json").write_text(json.dumps(row))
+            rows[digest] = row
+            if index % 25 == 0:
+                logger.info("%s: %d/%d", key, index, len(pending))
+
+    return [rows[digest] for digest in hashes]
 
 
 def build_curves(scores: dict[str, list[dict]]) -> list[Curve]:
@@ -267,7 +303,6 @@ def evaluate(config: Config, *, refresh: bool = False, rescore: bool = False) ->
     output = config.evaluation.output_dir
     output.mkdir(parents=True, exist_ok=True)
     dataset_path = output / DATASET_NAME
-    scores_path = output / SCORES_NAME
 
     if refresh or not dataset_path.exists():
         samples = collect_dataset(config, dataset_path)
@@ -275,15 +310,7 @@ def evaluate(config: Config, *, refresh: bool = False, rescore: bool = False) ->
         samples = load_dataset(dataset_path)
         logger.info("Loaded %d cached message(s) from %s", len(samples), dataset_path)
 
-    previous = None
-    if scores_path.exists() and not rescore and not refresh:
-        previous = json.loads(scores_path.read_text())
-
-    def checkpoint(scores: dict[str, list[dict]]) -> None:
-        scores_path.write_text(json.dumps(scores, indent=2))
-
-    scores = score_dataset(config, samples, previous, on_scored=checkpoint)
-    checkpoint(scores)
+    scores = score_dataset(config, samples, output, rescore=rescore)
 
     curves = build_curves(scores)
     if curves:
