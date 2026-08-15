@@ -1,3 +1,9 @@
+## v0.2.2 (2026-08-15)
+
+### Fix
+
+- chain Publish off Release completion instead of release events
+
 ## v0.2.1 (2026-08-15)
 
 ### Fix
