@@ -28,7 +28,9 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "commitizen>=4.12.1",
     "pytest>=9.1.1",
+    "ruff>=0.15.4",
 ]
 
 [tool.ruff]
@@ -40,3 +42,11 @@ select = ["F", "E", "I", "UP", "B"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.commitizen]
+name = "cz_conventional_commits"
+version = "0.1.0"
+version_provider = "pep621"
+update_changelog_on_bump = true
+major_version_zero = true
+tag_format = "v$version"
